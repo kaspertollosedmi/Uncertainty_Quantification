@@ -1,9 +1,7 @@
 t2m
-q2m
 u10
 v10
 sp
-nlwrt
 t950
 t900
 t700
