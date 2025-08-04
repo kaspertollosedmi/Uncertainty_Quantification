@@ -1,7 +1,10 @@
+# -*- coding: utf-8 -*-
+#--  Kasper Tølløse and Swapan Mallick
+#--  1 August 2025
+#-
 import os
 import sys
 import subprocess
-from pathlib import Path
 import shutil
 import matplotlib.pyplot as plt
 import xarray as xr
@@ -10,133 +13,139 @@ import zarr
 from process_data import process_carra2_data, process_era5_data
 
 
-# Modify the input andoutput directories
-SCRPDIR = "/home/dnk8136/Uncertainty_Quantification/CREATE_TRAINING_DATA"
-TMPDIR = f"{SCRPDIR}/tmp_ERA_C"
-INPUT1 = f"/scratch/dnk8136/DDPM_DATA/CARRA2/NCFILES"
-INPUT2 = f"/scratch/dnk8136/DDPM_DATA/ERA5/"
-PLOT_OUT = f"{SCRPDIR}/../PLOTS"
-output_file = f"{SCRPDIR}/../test.zarr"
+DATASET_NAME = "TRAINING_DATA"
+# DATASET_NAME = "CARRA2"
+# DATASET_NAME = "ERA5"
 
+
+# Modify the input and output directories
+SCRPDIR = "/home/dnk8136/Uncertainty_Quantification/CREATE_TRAINING_DATA"  # directory of conversion script
+TMPDIR = f"{SCRPDIR}/tmp_WORKING_DIR"                                      # working directory
+INPUT1 = f"/ec/res4/scratch/swe4281/DDPM_DATA/KESP/NCFILES/"               # path to CARRA2 netcdf files
+INPUT2 = f"/ec/res4/scratch/dnk8136/DDPM_DATA/ERA5/"                       # path to ERA5 netcdf files
+# INPUT1 = f"/ec/res4/scratch/swe4281/DDPM_DATA/CARRA2_SUMMER/NCFILES/"      # path to CARRA2 netcdf files
+# INPUT2 = f"/scratch/fasg/CARRA2/uncert_est/"                               # path to ERA5 netcdf files
+OUTDIR = f"/ec/res4/scratch/dnk8136/DDPM_DATA/"                  # path to output
+plot_png = True                                                            # optional plotting (mainly to verify that the algorithm works)
 
 # Input Date Configuration
 DTG = "202203"
-DTSTR, DTEND = 1, 1
+DTSTR, DTEND = 15, 15
 YY, MM = DTG[:4], DTG[4:6]
 
-os.makedirs(PLOT_OUT, exist_ok=True)
-VARIABLES_PNG = ['SD', 'EnsMEAN']
+
+# set down sampling method for CARRA2 data
+downsampling_option = None  # None/"averaging"/"subsampling"
+downsampling_factor = 1   # e.g. 12 -> 2869//12 = 239
 
 
-# Ensemble Member Configuration
-ens_mem = range(10)  # Members from 0 to 9
+# interpolate era5 data to the carra2 grid?
+interpolation_method = None  # None/"nearest"/"linear"
+if downsampling_option is None: interpolation_method = None
+
+
+# parameter list
+params_file = 'list_examples.txt'
+# params_file = 'list_all.txt'
 
 
 # Load Parameters from External File
-params_file = 'list_examples.txt'
 if not os.path.exists(params_file):
     raise FileNotFoundError(f"Parameter file '{params_file}' not found.")
 with open(params_file, 'r') as f:
     list_params = [line.strip() for line in f if line.strip()]
 
-
-# list of FA names corresponding to variable names in era5 netcdf files
-FA_name = {"t2m": "CLSTEMPERATURE",
-           "q2m": "CLSHUMI.SPECIFIQ",
-           "u10": "CLSVENT.ZONAL",
-           "v10": "CLSVENT.MERIDIEN",
-           "sp": "SURFPRESSION",
-           "nlwrt": "SOMMRAYT.TERREST",
-           "t950": "S051TEMPERATURE",
-           "t900": "S046TEMPERATURE",
-           "t700": "S033TEMPERATURE",
-           "t500": "S025TEMPERATURE",
-           "q950": "S051HUMI.SPECIFI",
-           "q900": "S046HUMI.SPECIFI",
-           "q700": "S033HUMI.SPECIFI",
-           "q500": "S025HUMI.SPECIFI",
-           "u950": "S051WIND.U.PHYS",
-           "u900": "S046WIND.U.PHYS",
-           "u700": "S033WIND.U.PHYS",
-           "u500": "S025WIND.U.PHYS",
-           "v950": "S051WIND.V.PHYS",
-           "v900": "S046WIND.V.PHYS",
-           "v700": "S033WIND.V.PHYS",
-           "v500": "S025WIND.V.PHYS"}
-
+# create directories
+os.makedirs(f"{OUTDIR}", exist_ok=True)
+os.makedirs(f"{OUTDIR}/PLOTS", exist_ok=True)
 
 
 # Main Processing Loop
-for DD in range(DTSTR, DTEND+1):  # Adjust this range if needed
+for DD in range(DTSTR, DTEND+1):  # loop over days
     DDN = f"{DD:02}"
-    for HH in ['00', '06', '12', '18']:
+
+    for HH in ['00', '06', '12', '18']:  # loop over hours
+
         timestamp = f"{DTG+DDN+HH}"
 
         # If the file already exists, check for the date
-        if os.path.exists(output_file):
-            print("\nfile exists")
-            existing_ds = xr.open_zarr(output_file)
+        if os.path.exists(f"{OUTDIR}/{DATASET_NAME}.zarr" ):
+            existing_ds = xr.open_zarr(f"{OUTDIR}/{DATASET_NAME}.zarr" )
             # check if variable exists in dataset already
             if timestamp in existing_ds['time'].values:
                 print(f"Date {timestamp} already processed. Skipping.")
                 continue
 
-        # initialize empty dataset
-        ds_datetime = xr.Dataset()
+        # initialize empty dataset to contain all parameters
+        ds_all_params = xr.Dataset()
 
-        # loop over parameters
-        for param in list_params:
 
+        for param in list_params:  # loop over parameters
+
+            # create and change to temp dir
             os.makedirs(TMPDIR, exist_ok=True)
             os.chdir(TMPDIR)
             
-            for mem in ens_mem:
-                 mem_IN = Path(f"{INPUT1}/{YY}/{MM}/{DDN}/{HH}/mbr00{mem}/FC006")     # CARRA2ENDA
-                 print(f'Processing Member {mem_IN}', flush=True)
-                 command = ['ln', '-sf', f"{mem_IN}/{FA_name[param]}.nc", f"FILE{mem}.nc"]
-                 subprocess.run(command)
-                 
-            # process data
-            ds_param = process_carra2_data(param, FA_name[param], timestamp)
-            # print("carra2", ds_param)
 
-            # merge datasets
-            ds_datetime = xr.merge([ds_datetime, ds_param])
+            # process CARRA2 data (for param)
+            ds_param_carra2 = process_carra2_data(INPUT1,
+                                                  OUTDIR,
+                                                  param,
+                                                  timestamp,
+                                                  YY, MM, DDN, HH,
+                                                  downsampling_option,
+                                                  downsampling_factor,
+                                                  plot_png)
+            # print("carra2", ds_param_carra2, flush=True)
 
-            # process data
-            ds_param = process_era5_data(INPUT2, param, timestamp)
-            # print("era5", ds_param)
 
-            # merge datasets
-            ds_datetime = xr.merge([ds_datetime, ds_param])
+            # process ERA5 data (for param)
+            ds_param_era5 = process_era5_data(INPUT2,
+                                              OUTDIR,
+                                              param,
+                                              timestamp,
+                                              YY, MM, DDN, HH,
+                                              interpolation_method,
+                                              (ds_param_carra2.Y, ds_param_carra2.X),   # carra2 dimensions
+                                              plot_png)
+            # print("era5", ds_param_era5, flush=True)
 
-            # move figures---
-            OUTPUT=f"{PLOT_OUT}/{DTG}/{param}"
-            os.makedirs(OUTPUT, exist_ok=True)
-            for png1 in VARIABLES_PNG:
-                if os.path.exists(f"{png1}_carra2.png"):
-                    file_out=f"{OUTPUT}/{png1}_{param}_{YY}{MM}{DDN}{HH}_carra2.png"
-                    mvfile = ['mv', f"{png1}_carra2.png", f"{file_out}"]
-                    subprocess.run(mvfile)
-                if os.path.exists(f"{png1}_era5.png"):
-                    file_out=f"{OUTPUT}/{png1}_{param}_{YY}{MM}{DDN}{HH}_era5.png"
-                    mvfile = ['mv', f"{png1}_era5.png", f"{file_out}"]
-                    subprocess.run(mvfile)
+
+            # merge single parameter datasets with all-params dataset (for both carra2 and era5)
+            ds_all_params = xr.merge([ds_all_params, ds_param_carra2])
+            ds_all_params = xr.merge([ds_all_params, ds_param_era5])
+            # print("dataset, all parameters:", ds_all_params, flush=True)
+
+
+            if plot_png:
+                # move figures---
+                OUTPUT=f"{OUTDIR}/PLOTS/{DTG}/{param}"
+                os.makedirs(OUTPUT, exist_ok=True)
+                for png1 in ['SD', 'EnsMEAN']:
+                    if os.path.exists(f"{png1}_carra2.png"):
+                        file_out=f"{OUTPUT}/{png1}_{param}_{YY}{MM}{DDN}{HH}_carra2.png"
+                        mvfile = ['mv', f"{png1}_carra2.png", f"{file_out}"]
+                        subprocess.run(mvfile)
+                    if os.path.exists(f"{png1}_era5.png"):
+                        file_out=f"{OUTPUT}/{png1}_{param}_{YY}{MM}{DDN}{HH}_era5.png"
+                        mvfile = ['mv', f"{png1}_era5.png", f"{file_out}"]
+                        subprocess.run(mvfile)
 
             # delete TMPDIR---
             os.chdir(SCRPDIR)
-            subprocess.run(["rm", "-rf", TMPDIR], cwd=SCRPDIR)
+            subprocess.run(["rm", "-rfd", TMPDIR], cwd=SCRPDIR)
 
         # write dataset to zarr archive
-        if os.path.exists(output_file):
+        if os.path.exists(f"{OUTDIR}/{DATASET_NAME}.zarr" ):
             # write to zarr
-            ds_datetime.to_zarr(output_file, mode='a', append_dim="time")
+            print("\nfile '{DATASET_NAME}.zarr' exists. Data is appended to existing archive.", flush=True)
+            ds_all_params.to_zarr(f"{OUTDIR}/{DATASET_NAME}.zarr" , mode='a', append_dim="time")
         else:
-            ds_datetime.to_zarr(output_file, mode='w')
+            print("\nfile '{DATASET_NAME}.zarr' does not exists. New archive is created.", flush=True)
+            ds_all_params.to_zarr(f"{OUTDIR}/{DATASET_NAME}.zarr" , mode='w')
         print(f"Data for {timestamp} successfully written to zarr database.", flush=True)
-
-        print("Current content of zarr archive:\n", xr.open_dataset(output_file), flush=True)
+        print("Current content of zarr archive:\n", xr.open_dataset(f"{OUTDIR}/{DATASET_NAME}.zarr"), flush=True)
     #  HH
 
-print("Final content of zarr archive:\n", xr.open_dataset(output_file), flush=True)
+print("Final content of zarr archive:\n", xr.open_dataset(f"{OUTDIR}/{DATASET_NAME}.zarr"), flush=True)
 quit()
