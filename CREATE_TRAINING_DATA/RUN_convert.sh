@@ -8,15 +8,26 @@ module load python3
 
 
 # Define your variables
-params_file="list_examples.txt"
-DTG="202201"
-DTSTR=5
-DTEND=5
-DATASET="CARRA2"
+params_list="$1"
+DTG="$2"
+DTSTR="$3"
+DTEND="$4"
+DATASET="$5"
+
+
+# # Define your variables
+# params_list="sp,t2m"
+# # params_list="list_examples.txt"
+# # params_list="list_params_all.txt"
+# DTG="202201"
+# DTSTR=5
+# DTEND=30
+# # DATASET="CARRA2"
 # DATASET="ERA5"
 
+
 # run data conversion
-python3 CONVERT2ZARR_$DATASET.py "$params_file" "$DTG" "$DTSTR" "$DTEND"
+python3 CONVERT2ZARR_$DATASET.py "$params_list" "$DTG" "$DTSTR" "$DTEND"
 
 
 # script for inspecting file

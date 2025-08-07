@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
-#--  Kasper Tølløse and Swapan Mallick
-#--  5 August 2025
+#--  Kasper Tølløse
+#--  7 August 2025
 #-
 import os
 import sys
@@ -16,10 +16,8 @@ from config import *
 
 
 def process_carra2_data(PATH_TO_DATA, VARIABLE, YY, MM, DDN, HH):
-
+    
     timestamp = f"{YY+MM+DDN+HH}"
-    print(f"\nCARRA2 variable to be processed: {VARIABLE} ({FA_name[VARIABLE]}), for {timestamp}", flush=True)
-
 
     # first, create local links to all carra2 ensemble members
     for mem in range(10):  # Members from 0 to 9

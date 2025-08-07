@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
-#--  Kasper Tølløse and Swapan Mallick
-#--  5 August 2025
+#--  Kasper Tølløse
+#--  7 August 2025
 #-
 import os
 import sys
@@ -21,7 +21,6 @@ def process_era5_data(PATH_TO_DATA, VARIABLE, YY, MM, DDN, HH):
     timestamp = f"{YY+MM+DDN+HH}"
     DATE = f"{YY+MM+DDN}"
     DTG = f"{YY+MM}"
-    print(f"\nERA5 variable to be processed: {VARIABLE}, for {timestamp}", flush=True)
 
     # open dataset 
     if VARIABLE in ["t2m", "u10", "v10", "sp"]:   # surface variables
