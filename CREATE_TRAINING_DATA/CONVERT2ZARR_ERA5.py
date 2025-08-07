@@ -28,7 +28,7 @@ MODEL = "ERA5"
 
 # Modify the input and output directories
 SCRPDIR = "/home/dnk8136/Uncertainty_Quantification/CREATE_TRAINING_DATA"  # directory of conversion script
-TMPDIR = f"{SCRPDIR}/tmp_WORKING_DIR"                                      # working directory
+TMPDIR = f"{SCRPDIR}/tmp_{MODEL}_{params_list}_{DTG}_{DTSTR}_{DTEND}"      # working directory
 OUTDIR = f"/ec/res4/scratch/dnk8136/DDPM_DATA/"                            # path to output
 INPUT2 = f"/scratch/fasg/CARRA2/uncert_est/"                               # path to ERA5 netcdf files
 
@@ -104,10 +104,6 @@ for DD in range(DTSTR, DTEND+1):  # loop over days
                         subprocess.run(mvfile)
 
 
-                # delete TMPDIR---
-                os.chdir(SCRPDIR)
-                subprocess.run(["rm", "-rfd", TMPDIR], cwd=SCRPDIR)
-
                 # write dataset to zarr archive
                 if os.path.exists(f"{ZARROUT}/{param}_{MODEL}_{DTG}.zarr" ):
                     # write to zarr
@@ -118,13 +114,18 @@ for DD in range(DTSTR, DTEND+1):  # loop over days
                     ds_param.to_zarr(f"{ZARROUT}/{param}_{MODEL}_{DTG}.zarr" , mode='w')
                 print(f"Data for {timestamp} successfully written to zarr database.", flush=True)
 
+                print("Current content of zarr archive:\n", xr.open_dataset(f"{ZARROUT}/{param}_{MODEL}_{DTG}.zarr"), flush=True)
+
             except Exception as e:
                 error_msg = f"For {timestamp}, parameter {param} was not processed due to error: {str(e)}"
                 print(error_msg, flush=True)
                 errors.append(error_msg)
 
 
-            print("Current content of zarr archive:\n", xr.open_dataset(f"{ZARROUT}/{param}_{MODEL}_{DTG}.zarr"), flush=True)
+            # delete TMPDIR---
+            os.chdir(SCRPDIR)
+            subprocess.run(["rm", "-rfd", TMPDIR], cwd=SCRPDIR)
+
     #  HH
 
 

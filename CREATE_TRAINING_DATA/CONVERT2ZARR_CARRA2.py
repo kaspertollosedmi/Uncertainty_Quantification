@@ -28,9 +28,9 @@ MODEL = "CARRA2"
 
 # Modify the input and output directories
 SCRPDIR = "/home/dnk8136/Uncertainty_Quantification/CREATE_TRAINING_DATA"  # directory of conversion script
-TMPDIR = f"{SCRPDIR}/tmp_WORKING_DIR"                                      # working directory
+TMPDIR = f"{SCRPDIR}/tmp_{MODEL}_{params_list}_{DTG}_{DTSTR}_{DTEND}"      # working directory
 OUTDIR = f"/ec/res4/scratch/dnk8136/DDPM_DATA/"                            # path to output
-if MM in ["01"]:                                                               # set input path arcoding to experiment
+if MM in ["01"]:                                                           # set input path arcoding to experiment
     INPUT1 = f"/ec/res4/scratch/swe4281/DDPM_DATA/CARRA2_WINTER/NCFILES/"
 elif MM in ["06"]:
     INPUT1 = f"/ec/res4/scratch/swe4281/DDPM_DATA/CARRA2_SUMMER/NCFILES/"
@@ -111,11 +111,6 @@ for DD in range(DTSTR, DTEND+1):  # loop over days
                         mvfile = ['mv', f"{png1}_carra2.png", f"{file_out}"]
                         subprocess.run(mvfile)
 
-
-                # delete TMPDIR---
-                os.chdir(SCRPDIR)
-                subprocess.run(["rm", "-rfd", TMPDIR], cwd=SCRPDIR)
-
                 # write dataset to zarr archive
                 if os.path.exists(f"{ZARROUT}/{param}_{MODEL}_{DTG}.zarr" ):
                     # write to zarr
@@ -126,13 +121,18 @@ for DD in range(DTSTR, DTEND+1):  # loop over days
                     ds_param.to_zarr(f"{ZARROUT}/{param}_{MODEL}_{DTG}.zarr" , mode='w')
                 print(f"Data for {timestamp} successfully written to zarr database.", flush=True)
 
+                print("Current content of zarr archive:\n", xr.open_dataset(f"{ZARROUT}/{param}_{MODEL}_{DTG}.zarr"), flush=True)
+
             except Exception as e:
                 error_msg = f"For {timestamp}, parameter {param} was not processed due to error: {str(e)}"
                 print(error_msg, flush=True)
                 errors.append(error_msg)
 
 
-            print("Current content of zarr archive:\n", xr.open_dataset(f"{ZARROUT}/{param}_{MODEL}_{DTG}.zarr"), flush=True)
+            # delete TMPDIR---
+            os.chdir(SCRPDIR)
+            subprocess.run(["rm", "-rfd", TMPDIR], cwd=SCRPDIR)
+
     #  HH
 
 
