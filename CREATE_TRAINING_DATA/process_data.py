@@ -264,8 +264,8 @@ def process_era5_data(PATH_TO_DATA, OUTDIR, VARIABLE, timestamp, YY, MM, DDN, HH
         plot_sd(
             "Standard Deviation", 
             ens_std,
-            "SD_carra2.png",
-            # f"{OUTDIR}/PLOTS/SD_{VARIABLE}_{YY}{MM}{DDN}_carra2.png",
+            "SD_era5.png",
+            # f"{OUTDIR}/PLOTS/SD_{VARIABLE}_{YY}{MM}{DDN}_era5.png",
             f"{YY}{MM}{DDN}",
             vmin=0,
             vmax=vmax
@@ -275,8 +275,8 @@ def process_era5_data(PATH_TO_DATA, OUTDIR, VARIABLE, timestamp, YY, MM, DDN, HH
         plot_ens_mean(
             "Ensemble Mean", 
             ens_mean,
-            "EnsMEAN_carra2.png",
-            # f"{OUTDIR}/PLOTS/EnsMEAN_{VARIABLE}_{YY}{MM}{DDN}_carra2.png",
+            "EnsMEAN_era5.png",
+            # f"{OUTDIR}/PLOTS/EnsMEAN_{VARIABLE}_{YY}{MM}{DDN}_era5.png",
             f"{YY}{MM}{DDN}",
             #vmin=np.floor(ens_mean.values.min()),
             #vmax=np.ceil(ens_mean.values.max()),

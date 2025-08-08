@@ -3,6 +3,7 @@
 #SBATCH --error=log.out
 #SBATCH --job-name=CONV2ZARR
 #SBATCH --qos=nf
+#SBATCH --time=4:00:00
 
 module load python3
 
