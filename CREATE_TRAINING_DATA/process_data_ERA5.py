@@ -41,7 +41,8 @@ def process_era5_data(PATH_TO_DATA, VARIABLE, YY, MM, DDN, HH):
     else:   # model level variables
         data = xr.open_dataset(PATH_TO_DATA+f"/{DTG}/ERA5_EDA_ML_{DATE}.nc")
         VAR_NAME, plevel = VARIABLE[:-3], VARIABLE[-3:]
-        hlevel = {"950": 96.0, "900": 106.0, "700": 119.0, "500": 123.0}
+        hlevel = {"950": 123.0, "900": 119.0, "700": 106.0, "500": 96.0}
+        # hlevel = {"950": 96.0, "900": 106.0, "700": 119.0, "500": 123.0}
 
         print("Minimum value for", VARIABLE, data[VAR_NAME].values.min(), flush=True)
         print("Mean value for   ", VARIABLE, data[VAR_NAME].values.mean(), flush=True)
@@ -50,7 +51,7 @@ def process_era5_data(PATH_TO_DATA, VARIABLE, YY, MM, DDN, HH):
         # Variables that need scaling
         if VARIABLE in scale_factors: data[VAR_NAME] *= scale_factors[VARIABLE]
 
-        # Compute statistics
+        # Compute statistics, and flip y axis
         ensemble_mean = data[VAR_NAME].sel(time=datetime.strptime(timestamp, "%Y%m%d%H"), hybrid=hlevel[plevel], y=data.y[::-1]).mean(dim='number')
         ensemble_std = data[VAR_NAME].sel(time=datetime.strptime(timestamp, "%Y%m%d%H"), hybrid=hlevel[plevel], y=data.y[::-1]).std(dim='number')
 
