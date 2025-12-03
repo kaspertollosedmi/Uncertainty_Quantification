@@ -12,7 +12,7 @@ module load eclib
 module load python3
 
 export MARS_MULTITARGET_STRICT_FORMAT=1
-DDIR=/scratch/swe4281/DDPM_DATA/CARR2DYN/DATA_JAN19  #
+DDIR=/scratch/${USER}/DDPM_DATA/CARR2DYN  #
 SCRDIR=${PWD}
 mkdir -p ${DDIR}
 
