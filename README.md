@@ -99,6 +99,3 @@ flowchart TD
 ```
 
 ---
-
-## Author
-**Swapan Mallick, SMHI**
