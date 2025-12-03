@@ -16,7 +16,7 @@ params_list="t2m"
 DTG="201901"
 DTSTR=1
 DTEND=10
-INPUT="/scratch/${USER}/DDPM_DATA/CARR2DYN/DATA_JAN19"  # Change here
+INPUT="/scratch/${USER}/DDPM_DATA/CARR2DYN/DATA"  # Change here
 OUTPUT="${INPUT}/PLOTS"
 mkdir -p ${OUTPUT}
 echo ${OUTPUT}
