@@ -1,7 +1,5 @@
 #!/usr/bin/env python3
 """
-grib_to_daily_nc.py  (MODIFIED)
-
 Output:
     For each day YYYYMMDD, generate FOUR files:
 
