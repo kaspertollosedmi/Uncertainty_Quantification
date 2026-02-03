@@ -8,11 +8,14 @@
 #SBATCH --qos=nf
 #SBATCH --time=24:00:00
 
+# January, March, April, June, September, and October 2022
+# 202201 202203 202204 202206 202209 202210 
+
 module load eclib
 module load python3
 
 export MARS_MULTITARGET_STRICT_FORMAT=1
-DDIR=/scratch/swe4281/DDPM_DATA/CARR2DYN/DATA_JAN19  #
+DDIR=/scratch/swe4281/DDPM_DATA/CARR2DYN/DATA_JAN19
 SCRDIR=${PWD}
 mkdir -p ${DDIR}
 
@@ -40,11 +43,11 @@ RETRIEVE,
  expver=prod,
  levtype=sfc,
  origin=no-ar-pa,
- param=167,
+ param=134/165/166/167,
  stream=oper,
  time=00/06/12/18,
  type=an,
- target="$DDIR/CARRA2_t2m_[DATE].grib"
+ target="$DDIR/CARRA2_SFC_[DATE].grib"
 EOF
 
 mars < mars_retrieve11.dat
