@@ -21,9 +21,17 @@ CARRA2_PARAMS = {
     'true_scale_latitude': 90.0,  # LAT0 - North Pole
     'domain_center_lon': -45.0,   # LONC
     'domain_center_lat': 84.0,    # LATC
-    # 'grid_resolution': 2500.0,    # GSIZE - meters (2.5 km)
-    # 'nx': 2880,                   # NLON
-    # 'ny': 2880,                   # NLAT
+    'grid_resolution': 2500.0,    # GSIZE - meters (2.5 km)
+    'nx': 2880,                   # NLON
+    'ny': 2880,                   # NLAT
+}
+
+CARRA2_WITH_PADDING_PARAMS = {
+    # Projection parameters for North Polar Stereographic for CARRA2
+    'central_longitude': -30.0,   # LON0 - projection reference longitude
+    'true_scale_latitude': 90.0,  # LAT0 - North Pole
+    'domain_center_lon': -45.0,   # LONC
+    'domain_center_lat': 84.0,    # LATC
     # changed coordinate parameters due to padding removal:
     'grid_resolution': 2603.07,   # GSIZE - meters (2.5 km) - changed due to grid number adjustment
     'nx': 2766,                   # NLON after padding removal (2880 - 2*57)
@@ -182,9 +190,14 @@ def plot_with_coastlines(data, output_file, cmap='jet', vmin=None, vmax=None,
 
     # Calculate extent from domain center (CARRA2_PARAMS now has cropped dimensions)
     x0, y0, x_center, y_center = calculate_grid_extent(CARRA2_PARAMS)
-    dx = CARRA2_PARAMS['grid_resolution']
-    nx = CARRA2_PARAMS['nx']
-    ny = CARRA2_PARAMS['ny']
+    if padding is None:
+        dx = CARRA2_PARAMS['grid_resolution']
+        nx = CARRA2_PARAMS['nx']
+        ny = CARRA2_PARAMS['ny']
+    else:
+        dx = CARRA2_WITH_PADDING_PARAMS['grid_resolution']
+        nx = CARRA2_WITH_PADDING_PARAMS['nx']
+        ny = CARRA2_WITH_PADDING_PARAMS['ny']
 
     x1 = x0 + nx * dx
     y1 = y0 + ny * dx
