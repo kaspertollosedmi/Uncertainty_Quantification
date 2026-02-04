@@ -217,17 +217,17 @@ def plot_with_coastlines(data, output_file, cmap='jet', vmin=None, vmax=None,
     if gridlines:
         import matplotlib.ticker as mticker
         gl = ax.gridlines(draw_labels=True, linewidth=1., color='gray',
-                          alpha=0.7, linestyle='--')
+                          alpha=0.7, linestyle='--',
+                          x_inline=False, y_inline=True)
         gl.top_labels = False
-        gl.right_labels = False
-        gl.xlabel_style = {'size': 8, 'color': 'black'}
-        gl.ylabel_style = {'size': 8, 'color': 'black'}
-        # Set longitude lines every 10 degrees (doubled density)
+        gl.bottom_labels = True
+        gl.xlabel_style = {'size': 8, 'color': 'black', 'rotation': 0}
+        gl.ylabel_style = {'size': 9, 'color': 'white'}
         gl.xlocator = mticker.FixedLocator(range(-180, 181, 20))
         gl.ylocator = mticker.FixedLocator(range(50, 91, 10))
 
     if colorbar:
-        plt.colorbar(im, ax=ax, shrink=0.7, label='')
+        plt.colorbar(im, ax=ax, shrink=0.8, label='')
 
     plt.savefig(output_file, bbox_inches='tight', facecolor='white', dpi=150)
     plt.close()
