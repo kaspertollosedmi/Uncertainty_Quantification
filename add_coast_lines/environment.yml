@@ -1,7 +1,6 @@
 name: coastline_plotting
 channels:
   - conda-forge
-  - defaults
 dependencies:
   - python>=3.9
   - numpy
