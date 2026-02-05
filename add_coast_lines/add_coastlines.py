@@ -219,7 +219,7 @@ def calculate_grid_extent(params):
     return x_origin, y_origin, x_center, y_center
 
 
-def save_netcdf(data, output_file, params):
+def save_netcdf(data, output_file, params, diagnostic_plot=False):
     """
     Save processed data to netCDF with projection coordinates.
 
@@ -231,6 +231,8 @@ def save_netcdf(data, output_file, params):
         Path to save the netCDF file
     params : dict
         Grid parameters dict (determines output resolution)
+    diagnostic_plot : bool
+        If True, save a diagnostic PNG plot alongside the netCDF
     """
     from scipy.ndimage import zoom
 
@@ -238,13 +240,35 @@ def save_netcdf(data, output_file, params):
     ny = params['ny']
     dx = params['grid_resolution']
 
+    print(f"\n=== Saving netCDF ===")
+    has_nan_in = np.any(np.isnan(data))
+    print(f"Input: shape={data.shape}, min={np.nanmin(data):.4f}, mean={np.nanmean(data):.4f}, max={np.nanmax(data):.4f}, has_nan={has_nan_in}")
+
     # Resample if data shape doesn't match target grid
     if nx != data.shape[0]:
         scale_factor = nx / data.shape[0]
         data_out = zoom(data, scale_factor, order=1)  # bilinear interpolation
-        print(f"Resampled: {data.shape} -> {data_out.shape}")
+        print(f"Resampled: {data.shape} -> {data_out.shape} (scale={scale_factor:.3f})")
     else:
         data_out = data
+
+    # Diagnostics for output data
+    has_nan_out = np.any(np.isnan(data_out))
+    print(f"Output: shape={data_out.shape}, min={np.nanmin(data_out):.4f}, mean={np.nanmean(data_out):.4f}, max={np.nanmax(data_out):.4f}, has_nan={has_nan_out}")
+    if has_nan_out:
+        n_nan = np.sum(np.isnan(data_out))
+        print(f"WARNING: {n_nan} NaN values ({100*n_nan/data_out.size:.2f}%)")
+
+    # Optional diagnostic plot
+    if diagnostic_plot:
+        diag_file = output_file.replace('.nc', '_diagnostic.png')
+        fig, ax = plt.subplots(figsize=(8, 8))
+        im = ax.imshow(data_out, origin='lower', cmap='jet', vmin=0, vmax=3)
+        ax.set_title(f'NetCDF output: {data_out.shape[0]}x{data_out.shape[1]}, dx={dx:.0f}m')
+        plt.colorbar(im, ax=ax, label='Uncertainty (K)')
+        plt.savefig(diag_file, dpi=100, bbox_inches='tight')
+        plt.close()
+        print(f"Diagnostic plot: {diag_file}")
 
     x0, y0, _, _ = calculate_grid_extent(params)
 
