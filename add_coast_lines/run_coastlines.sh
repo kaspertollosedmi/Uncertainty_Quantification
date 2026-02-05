@@ -30,7 +30,7 @@ SAVE_NETCDF=1
 #   246  - ML model resolution (small files, ~240 KB)
 #   2880 - Full CARRA2 resolution (large files, ~33 MB)
 #   If left empty, it uses the native PNG resolution (754x754, ~2.3 MB)
-OUTPUT_RESOLUTION="2880"
+OUTPUT_RESOLUTION="246"
 
 # Color scale limits
 VMIN=0.0
