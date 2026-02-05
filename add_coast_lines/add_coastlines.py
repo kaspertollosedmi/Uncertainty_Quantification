@@ -1,9 +1,11 @@
 # -*- coding: utf-8 -*-
 """
-Add coastlines to netCDF field plots using cartopy.
+Add coastlines to CARRA2 uncertainty field plots using cartopy.
 
-The netCDF files from the diffusion model lack coordinate metadata,
-so we need to define the CARRA2 grid projection parameters manually.
+Supports three input modes:
+- netcdf: Upscaled netCDF files (2880x2880, grayscale normalized to [0,3])
+- netcdf_raw: Raw netCDF files (256x256, grayscale in [-1,1])
+- png: PNG files with jet colormap (inverted to get true physical values)
 """
 
 import numpy as np
@@ -11,32 +13,188 @@ import xarray as xr
 import matplotlib.pyplot as plt
 import cartopy.crs as ccrs
 import cartopy.feature as cfeature
+from PIL import Image
+from matplotlib import cm
+from scipy.spatial import cKDTree
 
-# CARRA2 West domain grid parameters (North Polar Stereographic)
+# CARRA2 base parameters (North Polar Stereographic)
 # Original model config: NLON=2880, NLAT=2880, LONC=-45, LATC=84, LON0=-30, LAT0=90, GSIZE=2500
-# Adjusted for diffusion model output with 57-pixel padding removed on each side
-CARRA2_PARAMS = {
-    # Projection parameters for North Polar Stereographic for CARRA2
-    'central_longitude': -30.0,   # LON0 - projection reference longitude
-    'true_scale_latitude': 90.0,  # LAT0 - North Pole
-    'domain_center_lon': -45.0,   # LONC
-    'domain_center_lat': 84.0,    # LATC
-    'grid_resolution': 2500.0,    # GSIZE - meters (2.5 km)
-    'nx': 2880,                   # NLON
-    'ny': 2880,                   # NLAT
-}
+CARRA2_BASE_NX = 2880
+CARRA2_BASE_DX = 2500.0  # meters
 
-CARRA2_WITH_PADDING_PARAMS = {
-    # Projection parameters for North Polar Stereographic for CARRA2
-    'central_longitude': -30.0,   # LON0 - projection reference longitude
-    'true_scale_latitude': 90.0,  # LAT0 - North Pole
-    'domain_center_lon': -45.0,   # LONC
-    'domain_center_lat': 84.0,    # LATC
-    # changed coordinate parameters due to padding removal:
-    'grid_resolution': 2603.07,   # GSIZE - meters (2.5 km) - changed due to grid number adjustment
-    'nx': 2766,                   # NLON after padding removal (2880 - 2*57)
-    'ny': 2766,                   # NLAT after padding removal
-}
+
+def get_carra2_params(input_size=None, border=0):
+    """
+    Get CARRA2 grid parameters for a given input size and border.
+
+    Parameters
+    ----------
+    input_size : int or None
+        Input grid size (e.g., 2880, 256, 788). If None, returns base CARRA2 params.
+    border : int or None
+        Border size to remove from each side. If None, no border removal.
+
+    Returns
+    -------
+    params : dict
+        Grid parameters including projection info, resolution, and grid dimensions.
+
+    Examples
+    --------
+    >>> get_carra2_params()                    # Base CARRA2: 2880x2880, dx=2500m
+    >>> get_carra2_params(2880, 57)            # Upscaled netCDF: 2766x2766
+    >>> get_carra2_params(256, 5)              # Raw netCDF: 246x246
+    >>> get_carra2_params(788, 17)             # PNG: 754x754
+    """
+    # Static projection parameters
+    params = {
+        'central_longitude': -30.0,   # LON0 - projection reference longitude
+        'true_scale_latitude': 90.0,  # LAT0 - North Pole
+        'domain_center_lon': -45.0,   # LONC
+        'domain_center_lat': 84.0,    # LATC
+    }
+
+    # Calculate grid dimensions
+    if input_size is None:
+        # Base CARRA2 parameters
+        nx = ny = CARRA2_BASE_NX
+        dx = CARRA2_BASE_DX
+    else:
+        # Calculate grid size after border removal
+        nx = ny = input_size - 2 * border
+        # Grid resolution scales inversely with grid points
+        # (total domain extent is fixed at 2880 * 2500 m)
+        dx = CARRA2_BASE_DX * CARRA2_BASE_NX / nx
+
+    params['nx'] = nx
+    params['ny'] = ny
+    params['grid_resolution'] = dx
+
+    return params
+
+
+def read_netcdf(nc_path):
+    """
+    Read netCDF file and return data as numpy array.
+
+    The UQ netCDF files contain a single data variable (the uncertainty field).
+    This function extracts that variable and returns it as a 2D numpy array.
+    """
+    ds = xr.open_dataset(nc_path)
+
+    # Print dataset summary for debugging
+    print("=== Reading netCDF ===")
+    var_name = list(ds.data_vars)[0]
+    da = ds[var_name]
+    print(f"Variable: {var_name}, shape: {da.shape}")
+    print(f"Range: [{float(da.min()):.4f}, {float(da.max()):.4f}]")
+
+    return da.values
+
+
+def read_png(png_path, vmin=0.0, vmax=3.0):
+    """
+    Read PNG file and invert jet colormap to get physical values.
+
+    Parameters
+    ----------
+    png_path : str
+        Path to PNG file
+    vmin, vmax : float
+        The colorbar range used when creating the PNG
+
+    Returns
+    -------
+    data : array-like
+        Physical values array (same shape as input PNG, flipped to origin='lower')
+    """
+    img = Image.open(png_path)
+    img_array = np.array(img)[:, :, :3]  # Get RGB, ignore alpha
+
+    print(f"=== Reading PNG ===")
+    print(f"Total shape: {img_array.shape}")
+
+    # Invert jet colormap
+    physical, mask = invert_jet_rgb(img_array, vmin, vmax)
+
+    # Analyze physical values in valid data region
+    valid_data = physical[mask]
+    print(f"Physical range: [{np.nanmin(valid_data):.4f}, {np.nanmax(valid_data):.4f}]")
+
+    # Flip vertically: PNG has origin at top, we need origin at bottom
+    physical = np.flipud(physical)
+
+    return physical
+
+
+# Pre-compute jet colormap lookup table for RGB inversion
+_JET_SCALARS = np.linspace(0, 1, 1000)
+_JET_RGB = (cm.get_cmap('jet')(_JET_SCALARS)[:, :3] * 255).astype(np.uint8)
+_JET_TREE = cKDTree(_JET_RGB)
+
+
+def invert_jet_rgb(rgb_array, vmin=0.0, vmax=3.0):
+    """
+    Invert jet colormap RGB values to physical values.
+
+    Parameters
+    ----------
+    rgb_array : array-like
+        RGB array of shape (H, W, 3) with values in [0, 255]
+    vmin, vmax : float
+        The original colorbar range used when creating the PNG
+
+    Returns
+    -------
+    physical : array-like
+        Physical values in [vmin, vmax] range
+    mask : array-like
+        Boolean mask where True = valid jet color, False = background
+    """
+    flat_rgb = rgb_array.reshape(-1, 3)
+    distances, indices = _JET_TREE.query(flat_rgb)
+
+    # Get scalar values [0, 1] and scale to physical range
+    scalars = _JET_SCALARS[indices]
+    physical = vmin + scalars * (vmax - vmin)
+    physical = physical.reshape(rgb_array.shape[:2])
+
+    # Mask out non-jet colors (background) based on RGB distance
+    mask = distances.reshape(rgb_array.shape[:2]) < 50
+
+    return physical, mask
+
+
+def process_data(data, border=5, scale=True):
+    """
+    Process diffusion model output by removing border and optionally scaling.
+
+    Parameters
+    ----------
+    data : array-like
+        Input data array
+    border : int
+        Border size to remove in pixels (5 for raw 256x256, 57 for upscaled 2880x2880)
+    scale : bool
+        If True, denormalize from [-1, 1] to [0, 3] K (for raw data)
+        If False, data is already in physical units (for upscaled data)
+    """
+    print(f"\n=== Processing Data ===")
+    print(f"Input shape: {data.shape}, range: [{np.nanmin(data):.4f}, {np.nanmax(data):.4f}]")
+
+    # Remove border
+    interior = data[border:-border, border:-border]
+    print(f"After border removal ({border}px): {interior.shape}")
+
+    if scale:
+        # Denormalize: [-1, 1] -> [0, 3] K
+        result = (interior + 1) * 1.5
+        print(f"After scaling to physical: [{result.min():.4f}, {result.max():.4f}] K")
+    else:
+        result = interior
+        print(f"Interior range: [{np.nanmin(result):.4f}, {np.nanmax(result):.4f}]")
+
+    return result
 
 
 def calculate_grid_extent(params):
@@ -61,143 +219,107 @@ def calculate_grid_extent(params):
     return x_origin, y_origin, x_center, y_center
 
 
-def detect_padding(data, threshold=0.0):
+def save_netcdf(data, output_file, params):
     """
-    Detect padding around the edges of the data.
-
-    Looks for rows/columns that are all NaN or have very low variance.
-
-    Returns: dict with padding info and the indices of actual data.
-    """
-    ny, nx = data.shape
-
-    # Check for NaN values
-    nan_count = np.isnan(data).sum()
-    nan_fraction = nan_count / data.size
-
-    print("\n=== Padding Detection ===")
-    print(f"Data shape: {ny} x {nx}")
-    print(f"NaN count: {nan_count} ({nan_fraction*100:.1f}% of data)")
-
-    # Check if padding is NaN-based
-    if nan_count > 0:
-        print("Padding appears to be NaN values")
-
-        # Count valid (non-NaN) values per row and column
-        valid_per_row = np.sum(~np.isnan(data), axis=1)
-        valid_per_col = np.sum(~np.isnan(data), axis=0)
-
-        # Find first/last rows/cols with any valid data
-        row_has_data = valid_per_row > 0
-        col_has_data = valid_per_col > 0
-
-        first_row = np.argmax(row_has_data)
-        last_row = ny - 1 - np.argmax(row_has_data[::-1])
-        first_col = np.argmax(col_has_data)
-        last_col = nx - 1 - np.argmax(col_has_data[::-1])
-    else:
-        # Fall back to variance-based detection
-        row_std = np.nanstd(data, axis=1)
-        col_std = np.nanstd(data, axis=0)
-
-        row_has_data = row_std > threshold
-        col_has_data = col_std > threshold
-
-        first_row = np.argmax(row_has_data) if row_has_data.any() else 0
-        last_row = ny - 1 - np.argmax(row_has_data[::-1]) if row_has_data.any() else ny - 1
-        first_col = np.argmax(col_has_data) if col_has_data.any() else 0
-        last_col = nx - 1 - np.argmax(col_has_data[::-1]) if col_has_data.any() else nx - 1
-
-    padding = {
-        'top': first_row,
-        'bottom': ny - 1 - last_row,
-        'left': first_col,
-        'right': nx - 1 - last_col,
-        'data_slice': (slice(first_row, last_row + 1), slice(first_col, last_col + 1)),
-        'data_shape': (last_row - first_row + 1, last_col - first_col + 1),
-    }
-
-    print(f"\nPadding detected (in pixels):")
-    print(f"  Top: {padding['top']}, Bottom: {padding['bottom']}")
-    print(f"  Left: {padding['left']}, Right: {padding['right']}")
-    print(f"  Actual data region: rows [{first_row}:{last_row+1}], cols [{first_col}:{last_col+1}]")
-    print(f"  Actual data shape: {padding['data_shape']}")
-
-    # Check if padding is symmetric
-    if padding['top'] == padding['bottom'] and padding['left'] == padding['right']:
-        print(f"  Padding is symmetric!")
-    else:
-        print(f"  Warning: Padding is NOT symmetric")
-
-    # Get stats on actual data region
-    actual_data = data[padding['data_slice']]
-    print(f"\nActual data stats (excluding padding):")
-    print(f"  Min: {np.nanmin(actual_data):.4f}, Max: {np.nanmax(actual_data):.4f}")
-    print(f"  Mean: {np.nanmean(actual_data):.4f}, Std: {np.nanstd(actual_data):.4f}")
-
-    return padding
-
-
-def read_netcdf(nc_path):
-    """Read netCDF file and return data array."""
-    ds = xr.open_dataset(nc_path)
-    print("=== Dataset Info ===")
-    print(ds)
-    print("\n=== Attributes ===")
-    print(ds.attrs)
-    print("\n=== Data Variables ===")
-    for var in ds.data_vars:
-        da = ds[var]
-        print(f"  {var}: shape={da.shape}, min={float(da.min()):.4f}, max={float(da.max()):.4f}")
-    return ds
-
-
-def plot_with_coastlines(data, output_file, cmap='jet', vmin=None, vmax=None,
-                         padding=None, colorbar=False, gridlines=False):
-    """
-    Plot data with coastlines using cartopy.
-
-    This requires knowing the grid extent in the projection coordinates.
-    If padding is provided, crop the data and adjust extent accordingly.
+    Save processed data to netCDF with projection coordinates.
 
     Parameters
     ----------
     data : array-like
-        2D data array to plot
+        2D data array (already processed with border removed)
+    output_file : str
+        Path to save the netCDF file
+    params : dict
+        Grid parameters dict (determines output resolution)
+    """
+    from scipy.ndimage import zoom
+
+    nx = params['nx']
+    ny = params['ny']
+    dx = params['grid_resolution']
+
+    # Resample if data shape doesn't match target grid
+    if nx != data.shape[0]:
+        scale_factor = nx / data.shape[0]
+        data_out = zoom(data, scale_factor, order=1)  # bilinear interpolation
+        print(f"Resampled: {data.shape} -> {data_out.shape}")
+    else:
+        data_out = data
+
+    x0, y0, _, _ = calculate_grid_extent(params)
+
+    # Create coordinate arrays (cell centers)
+    x = x0 + (np.arange(nx) + 0.5) * dx
+    y = y0 + (np.arange(ny) + 0.5) * dx
+
+    ds = xr.Dataset(
+        data_vars={
+            'uncertainty': (['y', 'x'], data_out, {
+                'units': 'K',
+                'long_name': 'Temperature uncertainty estimate',
+            })
+        },
+        coords={
+            'x': (['x'], x, {
+                'units': 'm',
+                'long_name': 'x coordinate in projection',
+                'standard_name': 'projection_x_coordinate',
+            }),
+            'y': (['y'], y, {
+                'units': 'm',
+                'long_name': 'y coordinate in projection',
+                'standard_name': 'projection_y_coordinate',
+            }),
+        },
+        attrs={
+            'title': 'CARRA2 uncertainty estimate',
+            'projection': 'North Polar Stereographic',
+            'central_longitude': params['central_longitude'],
+            'domain_center_lon': params['domain_center_lon'],
+            'domain_center_lat': params['domain_center_lat'],
+            'grid_resolution_m': dx,
+        }
+    )
+
+    ds.to_netcdf(output_file)
+    print(f"Saved netCDF: {output_file}")
+
+
+def plot_with_coastlines(data, output_file, params, cmap='jet', vmin=None, vmax=None,
+                         colorbar=False, gridlines=False):
+    """
+    Plot data with coastlines using cartopy.
+
+    Parameters
+    ----------
+    data : array-like
+        2D data array (already processed with border removed)
     output_file : str
         Path to save the output figure
+    params : dict
+        Grid parameters dict containing projection info
     cmap : str
         Colormap name (default: 'jet')
     vmin, vmax : float
         Color scale limits
-    padding : dict
-        Padding info from detect_padding() to crop NaN borders
     colorbar : bool
         Whether to add a colorbar (default: False)
     gridlines : bool
         Whether to add latitude/longitude gridlines with labels (default: False)
     """
+
     projection = ccrs.NorthPolarStereo(
-        central_longitude=CARRA2_PARAMS['central_longitude']
+        central_longitude=params['central_longitude']
     )
 
     fig, ax = plt.subplots(figsize=(10, 10), subplot_kw={'projection': projection})
 
-    # Crop data if padding info provided
-    if padding is not None and padding['top'] > 0:
-        data = data[padding['data_slice']]
-        print(f"Cropped data shape: {data.shape}")
+    dx = params['grid_resolution']
+    nx = params['nx']
+    ny = params['ny']
 
-    # Calculate extent from domain center (CARRA2_PARAMS now has cropped dimensions)
-    x0, y0, x_center, y_center = calculate_grid_extent(CARRA2_PARAMS)
-    if padding is None:
-        dx = CARRA2_PARAMS['grid_resolution']
-        nx = CARRA2_PARAMS['nx']
-        ny = CARRA2_PARAMS['ny']
-    else:
-        dx = CARRA2_WITH_PADDING_PARAMS['grid_resolution']
-        nx = CARRA2_WITH_PADDING_PARAMS['nx']
-        ny = CARRA2_WITH_PADDING_PARAMS['ny']
+    # Calculate extent from domain center
+    x0, y0, x_center, y_center = calculate_grid_extent(params)
 
     x1 = x0 + nx * dx
     y1 = y0 + ny * dx
@@ -274,34 +396,66 @@ if __name__ == "__main__":
         type=float, default=3.0,
         help="Maximum value for color scale (default: 3.0)"
     )
+    parser.add_argument(
+        "--mode", "-m",
+        choices=["netcdf", "netcdf_raw", "png"],
+        default="netcdf",
+        help="Input mode: netcdf (upscaled), netcdf_raw (256x256), or png (jet colormap)"
+    )
+    parser.add_argument(
+        "--save-netcdf", "-n",
+        action="store_true",
+        help="Also save processed data as netCDF (physical units, no padding)"
+    )
+    parser.add_argument(
+        "--output-resolution", "-r",
+        type=int, choices=[246, 2880],
+        default=None,
+        help="NetCDF output resolution: 246 (ML model, small), 2880 (full CARRA2, large), or omit for native (754)"
+    )
 
     args = parser.parse_args()
 
-    # Build file paths
-    nc_file = f"{args.input_dir}/UQ_{args.datetime}.nc"
-    out_file = f"{args.output_dir}/UQ_{args.datetime}.png"
 
-    # Read and inspect data
-    ds = read_netcdf(nc_file)
+    # Build file paths and read data based on mode
+    if args.mode == "png":
+        in_file = f"{args.input_dir}/UQ_{args.datetime}.png"
+        data = read_png(in_file, vmin=args.vmin, vmax=args.vmax)
+        border = 17 # Detected border size for PNG files
+        scale = False  # Data is already in physical units after inversion
+        params = get_carra2_params(788, 17)         # PNG: 754x754
 
-    # Get the data variable (assuming single variable or 'UQ')
-    var_names = list(ds.data_vars)
-    var_name = var_names[0]
-    data = ds[var_name].values
+    elif args.mode == "netcdf_raw":
+        in_file = f"{args.input_dir}/UQ_raw_{args.datetime}.nc"
+        data = read_netcdf(in_file)
+        border = 5  # Border size to remove for raw data
+        scale = True  # Need to scale from [-1, 1] to [0, 3] K
+        params = get_carra2_params(256, 5)          # Raw netCDF: 246x246
 
-    print(f"\nPlotting variable: {var_name}")
-    print(f"Shape: {data.shape}")
+    else:  # netcdf
+        in_file = f"{args.input_dir}/UQ_{args.datetime}.nc"
+        data = read_netcdf(in_file)
+        border = 57  # Border size to remove for upscaled data
+        scale = False
+        params = get_carra2_params(2880, 57)   # Upscaled netCDF: 2766x2766
 
-    # Detect padding
-    padding = detect_padding(data)
+    # process data by removing white border and scaling data
+    print(f"\nPlotting UQ estimate, shape: {data.shape}")
+    data = process_data(data, border=border, scale=scale)
 
     # Plot with coastlines
+    out_file = f"{args.output_dir}/UQ_{args.datetime}.png"
     plot_with_coastlines(
-        data, out_file,
+        data, out_file, params,
         vmin=args.vmin, vmax=args.vmax,
-        padding=padding,
         colorbar=args.colorbar,
         gridlines=args.gridlines
     )
+
+    # Save as netCDF if requested
+    if args.save_netcdf and args.mode == "png":
+        nc_out = out_file.replace('.png', '.nc')
+        nc_params = get_carra2_params(args.output_resolution)
+        save_netcdf(data, nc_out, nc_params)
 
     print("\nDone!")

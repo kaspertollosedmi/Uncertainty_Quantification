@@ -12,9 +12,25 @@ ENV_NAME="coastline_plotting"
 INPUT_DIR="/ec/res4/scratch/swe4281/DDPM_EVAL_JAN2021/OUTPUT_JAN2026/"
 OUTPUT_DIR="../sample_data/output"
 
+# Input mode: netcdf, netcdf_raw, or png
+#   netcdf     - Upscaled netCDF files (2880x2880, grayscale normalized to [0,3])
+#   netcdf_raw - Raw netCDF files (256x256, grayscale in [-1,1])
+#   png        - PNG files with jet colormap (inverted to get true physical values)
+MODE="png"
+
 # Plot options (set to 1 to enable, 0 to disable)
 SHOW_COLORBAR=1
 SHOW_GRIDLINES=1
+
+# Save processed data as netCDF (physical units, no padding)
+SAVE_NETCDF=1
+
+# NetCDF output resolution (only used with SAVE_NETCDF=1 and MODE=png)
+# examples:
+#   246  - ML model resolution (small files, ~240 KB)
+#   2880 - Full CARRA2 resolution (large files, ~33 MB)
+#   If left empty, it uses the native PNG resolution (754x754, ~2.3 MB)
+OUTPUT_RESOLUTION="2880"
 
 # Color scale limits
 VMIN=0.0
@@ -62,9 +78,11 @@ echo ""
 # -----------------------------------------------------------------------------
 # Build command-line options
 # -----------------------------------------------------------------------------
-OPTS=""
+OPTS="--mode $MODE"
 [ "$SHOW_COLORBAR" -eq 1 ] && OPTS="$OPTS --colorbar"
 [ "$SHOW_GRIDLINES" -eq 1 ] && OPTS="$OPTS --gridlines"
+[ "$SAVE_NETCDF" -eq 1 ] && OPTS="$OPTS --save-netcdf"
+[ -n "$OUTPUT_RESOLUTION" ] && OPTS="$OPTS --output-resolution $OUTPUT_RESOLUTION"
 
 # -----------------------------------------------------------------------------
 # Process each datetime
