@@ -278,7 +278,7 @@ def save_netcdf(data, output_file, params, diagnostic_plot=False):
 
     ds = xr.Dataset(
         data_vars={
-            'uncertainty': (['y', 'x'], data_out, {
+            'uncertainty': (['y', 'x'], data_out.astype(np.float32), {
                 'units': 'K',
                 'long_name': 'Temperature uncertainty estimate',
             })
