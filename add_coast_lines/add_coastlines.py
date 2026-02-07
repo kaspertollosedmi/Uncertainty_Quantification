@@ -308,6 +308,8 @@ def save_netcdf(data, output_file, params, diagnostic_plot=False):
     ds.to_netcdf(output_file)
     print(f"Saved netCDF: {output_file}")
 
+    return data_out
+
 
 def plot_with_coastlines(data, output_file, params, cmap='jet', vmin=None, vmax=None,
                          colorbar=False, gridlines=False):
@@ -433,7 +435,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--output-resolution", "-r",
-        type=int, choices=[246, 2880],
+        type=int,
         default=None,
         help="NetCDF output resolution: 246 (ML model, small), 2880 (full CARRA2, large), or omit for native (754)"
     )
@@ -467,8 +469,14 @@ if __name__ == "__main__":
     print(f"\nPlotting UQ estimate, shape: {data.shape}")
     data = process_data(data, border=border, scale=scale)
 
-    # Plot with coastlines
+    # Save as netCDF if requested
     out_file = f"{args.output_dir}/UQ_{args.datetime}.png"
+    if args.save_netcdf and args.mode == "png":
+        nc_out = out_file.replace('.png', '.nc')
+        nc_params = get_carra2_params(args.output_resolution)
+        data = save_netcdf(data, nc_out, nc_params)
+        
+    # Plot with coastlines
     plot_with_coastlines(
         data, out_file, params,
         vmin=args.vmin, vmax=args.vmax,
@@ -476,10 +484,5 @@ if __name__ == "__main__":
         gridlines=args.gridlines
     )
 
-    # Save as netCDF if requested
-    if args.save_netcdf and args.mode == "png":
-        nc_out = out_file.replace('.png', '.nc')
-        nc_params = get_carra2_params(args.output_resolution)
-        save_netcdf(data, nc_out, nc_params)
 
     print("\nDone!")
